@@ -6,45 +6,97 @@ contract Dip is ERC20 {
 
   // fixed point math reference: https://forum.openzeppelin.com/t/designing-fixed-point-math-in-openzeppelin-contracts/2499
 
-  private uint256 _lifespan;
-  private bool _distributing;
-  private uint256 _initialSupply;
+  private address _targetToken;
+  private address _baseToken;
+  private address _targetPair;
+  private address _dipPair;
+
+  private bool _predip = true;
   private mapping (address => bool) _shareCalculated;
   private mapping (address => uint256) _shares; // percentage ownership
 
-  // need to override balanceOf function from base, even though it's not virtual
-
-  // look into using beforeTokenTransfer hook for transfer controls
-
-  // modifier checking if share was set
-
   // needs name, symbol, target token address, price oracle address
-  constructor() {
-    _lifespan = 365;
-    _distributing = true;
+  constructor(address targetToken, address baseToken) ERC20('Dip V1', 'DIP-V1') {
+    _targetToken = target;
+    _baseToken = baseToken;
+    address factory = 0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f;
+    _targetPair = address(uint(keccak256(abi.encodePacked(
+      hex'ff',
+      factory,
+      keccak256(abi.encodePacked(targetToken, baseToken)),
+      hex'96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f'
+    ))));
   }
 
-  // calculate balance based on percentage ownership and total supply
-  // return unknown if shares not set
-  function balanceOf(address account) view override {}
+  /* ERC20 Token Function Overrides */
 
-  // user locks target token or LP token during distribution period for dip tokens
+  function balanceOf(address account) public view override returns (uint256) {
+    if (_predip === true) {
+      return _balances[account];
+    }
+  }
+
+  function transfer(address recipient, uint256 amount) public override returns (bool) {
+    if (_predip === true) {
+      _transfer(_msgSender(), recipient, amount);
+      return true;
+    }
+  }
+
+  function allowance(address owner, address spender) public view override returns (uint256) {
+    if (_predip === true) {
+      return _allowances[owner][spender];
+    }
+  }
+
+  function approve(address spender, uint256 amount) public override returns (bool) {
+    if (_predip === true) {
+      _approve(_msgSender(), spender, amount);
+      return true;
+    }
+  }
+
+  function transferFrom(address sender, address recipient, uint256 amount) public override returns (bool) {
+    if (_predip === true) {
+      _transfer(sender, recipient, amount);
+      _approve(sender, _msgSender(), _allowances[sender][_msgSender()].sub(amount, "ERC20: transfer amount exceeds allowance"));
+      return true;
+    }
+  }
+
+  function increaseAllowance(address spender, uint256 addedValue) public override returns (bool) {
+    if (_predip === true) {
+      _approve(_msgSender(), spender, _allowances[_msgSender()][spender].add(addedValue));
+      return true;
+    }
+  }
+
+  function decreaseAllowance(address spender, uint256 subtractedValue) public override returns (bool) {
+    if (_predip === true) {
+      _approve(_msgSender(), spender, _allowances[_msgSender()][spender].sub(subtractedValue, "ERC20: decreased allowance below zero"));
+      return true;
+    }
+  }
+
+  /* Dip specific functions */
+
+  // user locks target token during distribution period for dip tokens
+  // reject ERC20 transfers unless target token and in predip period?
   function lock() public {
-    require(_distributing === true);
+    require(_predip === true);
   }
 
-  // end distribution period, sell lockup tokens, release locked LP tokens, add liquidity to the Dip pool
+  // end distribution period, sell lockup tokens, add liquidity to the Dip pool
   function dip() public {
-    _distributing = false;
+    _predip = false;
     // sell lockup tokens
-    // release locked LP tokens
     // buy dip tokens and ETH, and fund the Dip/ETH pool
     // calculate _shares for the Dip/ETH pool
   }
 
   // set a user's share relative to their percentage of the initial total supply
   function calculateShare(address account) public {
-    require(_distributing === false);
+    require(_predip === false);
   }
 
   // change adjustment factor, reward rebaser with Dip pool LP tokens
@@ -71,4 +123,16 @@ contract Dip is ERC20 {
   // we will need to track balances before the dip, and shares after the dip, deleting the balance after calculating share
 
   // we'll need a way to update the Dip contract with the address of the Dip/ETH pool after deployment
+
+  // balanceOf, transfer, approve, etc. will need to work differently depending on whether the dip happened or not
 }
+
+
+/* Outdated Notes */
+
+
+  // look into using beforeTokenTransfer hook for transfer controls
+
+  // modifier checking if share was set
+
+    // need to override balanceOf function from base, even though it's not virtual
