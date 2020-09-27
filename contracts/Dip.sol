@@ -48,12 +48,19 @@ contract Dip is ERC20 {
     if (_predip === true) {
       _transfer(_msgSender(), recipient, amount);
       return true;
+    } else {
+      require(shareCalculated[_msgSender()] === true);
+      require(shareCalculated[recipient] === true);
+      // calculate balances in memory based on _shares * _totalSupply
+      // transfer the amount and calculate new shares for each user
     }
   }
 
   function allowance(address owner, address spender) public view override returns (uint256) {
     if (_predip === true) {
       return _allowances[owner][spender];
+    } else {
+      require(shareCalculated[owner] === true);
     }
   }
 
@@ -61,6 +68,8 @@ contract Dip is ERC20 {
     if (_predip === true) {
       _approve(_msgSender(), spender, amount);
       return true;
+    } else {
+      require(shareCalculated[_msgSender()] === true);
     }
   }
 
@@ -69,6 +78,9 @@ contract Dip is ERC20 {
       _transfer(sender, recipient, amount);
       _approve(sender, _msgSender(), _allowances[sender][_msgSender()].sub(amount, "ERC20: transfer amount exceeds allowance"));
       return true;
+    } else {
+      require(shareCalculated[sender] === true);
+      require(shareCalculated[recipient] === true);
     }
   }
 
@@ -76,6 +88,8 @@ contract Dip is ERC20 {
     if (_predip === true) {
       _approve(_msgSender(), spender, _allowances[_msgSender()][spender].add(addedValue));
       return true;
+    } else {
+      require(shareCalculated[_msgSender()] === true);
     }
   }
 
@@ -83,6 +97,8 @@ contract Dip is ERC20 {
     if (_predip === true) {
       _approve(_msgSender(), spender, _allowances[_msgSender()][spender].sub(subtractedValue, "ERC20: decreased allowance below zero"));
       return true;
+    } else {
+      require(shareCalculated[_msgSender()] === true);
     }
   }
 
@@ -105,36 +121,46 @@ contract Dip is ERC20 {
   // set a user's share relative to their percentage of the initial total supply
   function calculateShare(address account) public {
     require(_predip === false);
+    require(shareCalculated[account] === false);
+    // calculate share
+    delete _balances[account];
   }
 
   // change total supply, reward rebaser with Dip pool LP tokens
   function rebase() public {
-    // reward LP token
     // adjust total supply
+    // reward LP token
   }
+}
 
-  // on transfer, calculate tokens available to transfer based on total supply times share, and then calculate two users shares from new balances
 
-  // for balance, calculate total supply times share
 
-  // instead of tracking token balances per user, we track shares of the variable total supply
+
+
+
+
+
+
+
+
+
+
+/* Outdated Notes */
+
+// only users whose shares have been set can call transfer and approve
+// balanceOf, transfer, approve, etc. will need to work differently depending on whether the dip happened or not
+// we'll need a way to update the Dip contract with the address of the Dip/ETH pool after deployment
+
+
+// we will need to track balances before the dip, and shares after the dip, deleting the balance after calculating share
 
   // total supply increases from minting, and then adjusts up and down through rebase
 
   // user shares can be set after the dip function call
 
   // user shares are initially set relative to the initial supply
-
-  // only users whose shares have been set can call transfer and approve
-
-  // we will need to track balances before the dip, and shares after the dip, deleting the balance after calculating share
-}
-
-
-/* Outdated Notes */
-// balanceOf, transfer, approve, etc. will need to work differently depending on whether the dip happened or not
-// we'll need a way to update the Dip contract with the address of the Dip/ETH pool after deployment
-
+  // instead of tracking token balances per user, we track shares of the variable total supply
+  // for balance, calculate total supply times share
 
   // look into using beforeTokenTransfer hook for transfer controls
 
