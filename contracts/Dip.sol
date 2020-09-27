@@ -12,10 +12,10 @@ contract Dip is ERC20 {
   private address _dipPair;
 
   private bool _predip = true;
+  private uint256 _initialSupply;
   private mapping (address => bool) _shareCalculated;
-  private mapping (address => uint256) _shares; // percentage ownership
+  private mapping (address => uint256) _shares;
 
-  // needs name, symbol, target token address, price oracle address
   constructor(address targetToken, address baseToken) ERC20('Dip V1', 'DIP-V1') {
     _targetToken = target;
     _baseToken = baseToken;
@@ -26,6 +26,12 @@ contract Dip is ERC20 {
       keccak256(abi.encodePacked(targetToken, baseToken)),
       hex'96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f'
     ))));
+    _dipPair = address(uint(keccak256(abi.encodePacked(
+      hex'ff',
+      factory,
+      keccak256(abi.encodePacked(address(this), baseToken)),
+      hex'96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f'
+    ))));
   }
 
   /* ERC20 Token Function Overrides */
@@ -33,6 +39,8 @@ contract Dip is ERC20 {
   function balanceOf(address account) public view override returns (uint256) {
     if (_predip === true) {
       return _balances[account];
+    } else {
+      // return _shares * _totalSupply
     }
   }
 
@@ -99,10 +107,9 @@ contract Dip is ERC20 {
     require(_predip === false);
   }
 
-  // change adjustment factor, reward rebaser with Dip pool LP tokens
+  // change total supply, reward rebaser with Dip pool LP tokens
   function rebase() public {
-    // reward LP token hoard divided by remaining _lifespan
-    _lifespan.sub(1);
+    // reward LP token
     // adjust total supply
   }
 
@@ -114,21 +121,19 @@ contract Dip is ERC20 {
 
   // total supply increases from minting, and then adjusts up and down through rebase
 
-  // user shares can be set during the dip function call
+  // user shares can be set after the dip function call
 
-  // user shares are relative to the initial supply and whether their shares have been set yet
+  // user shares are initially set relative to the initial supply
 
   // only users whose shares have been set can call transfer and approve
 
   // we will need to track balances before the dip, and shares after the dip, deleting the balance after calculating share
-
-  // we'll need a way to update the Dip contract with the address of the Dip/ETH pool after deployment
-
-  // balanceOf, transfer, approve, etc. will need to work differently depending on whether the dip happened or not
 }
 
 
 /* Outdated Notes */
+// balanceOf, transfer, approve, etc. will need to work differently depending on whether the dip happened or not
+// we'll need a way to update the Dip contract with the address of the Dip/ETH pool after deployment
 
 
   // look into using beforeTokenTransfer hook for transfer controls
