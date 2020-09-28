@@ -131,7 +131,19 @@ contract Dip is ERC20 {
     // adjust total supply
     // reward LP token
   }
+
+  // issue more dip tokens
+  function doubledip() public {
+    // only multisig or token holders
+  }
 }
+
+/**
+
+Double-dip tokens and double-dip functionality? Re-opening for a sale of additional dip tokens when approved by DD token holders. Project treasury fed by protocol fees collected when dip() is called.
+
+**/
+
 
 
 
