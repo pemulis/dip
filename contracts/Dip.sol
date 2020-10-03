@@ -1,4 +1,4 @@
-pragma solidity ^0.7.1;
+pragma solidity ^0.7.3;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -40,17 +40,17 @@ contract Dip is ERC20 {
   function balanceOf(address account) public view override returns (uint256) {
     if (_predip === true) {
       return _balances[account];
-    } else if (_balances[account] > 0) {
+    }
+    if (_balances[account] > 0) {
       return FixedPoint.calculateMantissa(
         _balances[account],
         _initialSupply
       );
-    } else {
-      return FixedPoint.multiplyUintByMantissa(
-        _totalSupply,
-        _shares[account]
-      );
     }
+    return FixedPoint.multiplyUintByMantissa(
+      _totalSupply,
+      _shares[account]
+    );
   }
 
   function transfer(address recipient, uint256 amount) public override returns (bool) {
@@ -61,19 +61,20 @@ contract Dip is ERC20 {
     if (shareCalculated[_msgSender()] === false) {
       _calculateShare(_msgSender());
     }
-    amount = _calculateAmountAsShare(amount);
+    amount = _convertAmountToShare(amount);
     require(_shares[_msgSender()] >= amount, "Insufficient balance.");
     _shares[_msgSender()].sub(amount);
-    _shares[_recipient].add(amount);
+    _shares[recipient].add(amount);
   }
 
   function allowance(address owner, address spender) public view override returns (uint256) {
     if (_predip === true) {
       return _allowances[owner][spender];
     }
-    if (shareCalculated[owner] === false) {
-      _calculateShare(owner);
-    }
+    return FixedPoint.multiplyUintByMantissa(
+      _totalSupply,
+      _shareAllowances[owner][spender]
+    );
   }
 
   function approve(address spender, uint256 amount) public override returns (bool) {
@@ -84,7 +85,7 @@ contract Dip is ERC20 {
     if (shareCalculated[_msgSender()] === false) {
       _calculateShare(_msgSender());
     }
-    amount = _calculateAmountAsShare(amount);
+    amount = _convertAmountToShare(amount);
     _shareAllowances[_msgSender(), spender] = amount;
   }
 
@@ -97,6 +98,10 @@ contract Dip is ERC20 {
     if (shareCalculated[sender] === false) {
       _calculateShare(sender);
     }
+    amount = _convertAmountToShare(amount);
+    require(_shares[sender] >= amount, "Insufficient balance.");
+    _shares[sender].sub(amount);
+    _shares[recipient].add(amount);
   }
 
   function increaseAllowance(address spender, uint256 addedValue) public override returns (bool) {
@@ -107,6 +112,8 @@ contract Dip is ERC20 {
     if (shareCalculated[_msgSender()] === false) {
       _calculateShare(_msgSender());
     }
+    addedValue = _convertAmountToShare(addedValue);
+    _shareAllowances[_msgSender(), spender].add(addedValue);
   }
 
   function decreaseAllowance(address spender, uint256 subtractedValue) public override returns (bool) {
@@ -117,6 +124,8 @@ contract Dip is ERC20 {
     if (shareCalculated[_msgSender()] === false) {
       _calculateShare(_msgSender());
     }
+    subtractedValue = _convertAmountToShare(subtractedValue);
+    _shareAllowances[_msgSender(), spender].sub(subtractedValue);
   }
 
   /* Dip specific functions */
@@ -148,7 +157,7 @@ contract Dip is ERC20 {
     _shares[account] = share;
   }
 
-  function _calculateAmountAsShare(uint256 amount) internal {
+  function _convertAmountToShare(uint256 amount) internal {
     return FixedPoint.multiplyUintByMantissa(
       _totalSupply,
       amount
@@ -165,9 +174,10 @@ contract Dip is ERC20 {
 
 
 // protocol fee goes into multisig and address can be updated?
-// dip LP tokens for specified pairs redeemed for doubledip tokens?
+// dip LP tokens for specified pairs locked to farm doubledip tokens?
 // doubledip tokens used to vote on new specified pairs, multisig, and spending?
 // if share is not calculated for recipient, that's fine, and calling calculateShare will add to their current share from previous postdip transfers
+// locking dip LP tokens to farm doubledip tokens incentivizes long-term liquidity for important pools
 
 
 
