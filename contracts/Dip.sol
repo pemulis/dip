@@ -1,10 +1,12 @@
 pragma solidity ^0.7.1;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/math/SafeMath.sol";
+import "./FixedPoint.sol";
 
 contract Dip is ERC20 {
-
-  // fixed point math reference: https://forum.openzeppelin.com/t/designing-fixed-point-math-in-openzeppelin-contracts/2499
+  using SafeMath for uint256;
 
   private address _targetToken;
   private address _baseToken;
@@ -15,6 +17,7 @@ contract Dip is ERC20 {
   private uint256 _initialSupply;
   private mapping (address => bool) _shareCalculated;
   private mapping (address => uint256) _shares;
+  private mapping (address => mapping (address => uint256))  _shareAllowances;
 
   constructor(address targetToken, address baseToken) ERC20('Dip V1', 'DIP-V1') {
     _targetToken = target;
@@ -34,13 +37,19 @@ contract Dip is ERC20 {
     ))));
   }
 
-  /* ERC20 Token Function Overrides */
-
   function balanceOf(address account) public view override returns (uint256) {
     if (_predip === true) {
       return _balances[account];
+    } else if (_balances[account] > 0) {
+      return FixedPoint.calculateMantissa(
+        _balances[account],
+        _initialSupply
+      );
     } else {
-      // return _shares * _totalSupply
+      return FixedPoint.multiplyUintByMantissa(
+        _totalSupply,
+        _shares[account]
+      );
     }
   }
 
@@ -48,19 +57,22 @@ contract Dip is ERC20 {
     if (_predip === true) {
       _transfer(_msgSender(), recipient, amount);
       return true;
-    } else {
-      require(shareCalculated[_msgSender()] === true);
-      require(shareCalculated[recipient] === true);
-      // calculate balances in memory based on _shares * _totalSupply
-      // transfer the amount and calculate new shares for each user
     }
+    if (shareCalculated[_msgSender()] === false) {
+      _calculateShare(_msgSender());
+    }
+    amount = _calculateAmountAsShare(amount);
+    require(_shares[_msgSender()] >= amount, "Insufficient balance.");
+    _shares[_msgSender()].sub(amount);
+    _shares[_recipient].add(amount);
   }
 
   function allowance(address owner, address spender) public view override returns (uint256) {
     if (_predip === true) {
       return _allowances[owner][spender];
-    } else {
-      require(shareCalculated[owner] === true);
+    }
+    if (shareCalculated[owner] === false) {
+      _calculateShare(owner);
     }
   }
 
@@ -68,9 +80,12 @@ contract Dip is ERC20 {
     if (_predip === true) {
       _approve(_msgSender(), spender, amount);
       return true;
-    } else {
-      require(shareCalculated[_msgSender()] === true);
     }
+    if (shareCalculated[_msgSender()] === false) {
+      _calculateShare(_msgSender());
+    }
+    amount = _calculateAmountAsShare(amount);
+    _shareAllowances[_msgSender(), spender] = amount;
   }
 
   function transferFrom(address sender, address recipient, uint256 amount) public override returns (bool) {
@@ -78,9 +93,9 @@ contract Dip is ERC20 {
       _transfer(sender, recipient, amount);
       _approve(sender, _msgSender(), _allowances[sender][_msgSender()].sub(amount, "ERC20: transfer amount exceeds allowance"));
       return true;
-    } else {
-      require(shareCalculated[sender] === true);
-      require(shareCalculated[recipient] === true);
+    }
+    if (shareCalculated[sender] === false) {
+      _calculateShare(sender);
     }
   }
 
@@ -88,8 +103,9 @@ contract Dip is ERC20 {
     if (_predip === true) {
       _approve(_msgSender(), spender, _allowances[_msgSender()][spender].add(addedValue));
       return true;
-    } else {
-      require(shareCalculated[_msgSender()] === true);
+    }
+    if (shareCalculated[_msgSender()] === false) {
+      _calculateShare(_msgSender());
     }
   }
 
@@ -97,33 +113,46 @@ contract Dip is ERC20 {
     if (_predip === true) {
       _approve(_msgSender(), spender, _allowances[_msgSender()][spender].sub(subtractedValue, "ERC20: decreased allowance below zero"));
       return true;
-    } else {
-      require(shareCalculated[_msgSender()] === true);
+    }
+    if (shareCalculated[_msgSender()] === false) {
+      _calculateShare(_msgSender());
     }
   }
 
   /* Dip specific functions */
 
-  // user locks target token during distribution period for dip tokens
+  // user swaps target token during distribution period for dip tokens
   // reject ERC20 transfers unless target token and in predip period?
-  function lock() public {
-    require(_predip === true);
+  function swap(uint256 amount) public {
+    require(_predip === true, "The token distribution period is over.");
+    IERC20(_targetToken).transferFrom(_msgSender(), address(this), amount);
+    // sell target token
+    // buy dip tokens and ETH and fund the Dip/ETH pool
   }
 
-  // end distribution period, sell lockup tokens, add liquidity to the Dip pool
   function dip() public {
     _predip = false;
-    // sell lockup tokens
-    // buy dip tokens and ETH, and fund the Dip/ETH pool
-    // calculate _shares for the Dip/ETH pool
+    _calculateShare(_dipPair);
   }
 
   // set a user's share relative to their percentage of the initial total supply
-  function calculateShare(address account) public {
-    require(_predip === false);
-    require(shareCalculated[account] === false);
-    // calculate share
+  function _calculateShare(address account) internal {
+    require(_predip === false, "The token distribution period is still active.");
+    require(shareCalculated[account] === false, "Token share has already been calculated for this account.");
+    uint256 share = FixedPoint.calculateMantissa(
+      _balances[account],
+      _initialSupply
+    );
+    shareCalculated[account] = true;
     delete _balances[account];
+    _shares[account] = share;
+  }
+
+  function _calculateAmountAsShare(uint256 amount) internal {
+    return FixedPoint.multiplyUintByMantissa(
+      _totalSupply,
+      amount
+    );
   }
 
   // change total supply, reward rebaser with Dip pool LP tokens
@@ -131,24 +160,14 @@ contract Dip is ERC20 {
     // adjust total supply
     // reward LP token
   }
-
-  // issue more dip tokens
-  function doubledip() public {
-    // only multisig or token holders
-  }
 }
 
-/**
-
-Double-dip tokens and double-dip functionality? Re-opening for a sale of additional dip tokens when approved by DD token holders. Project treasury fed by protocol fees collected when dip() is called.
-
-**/
 
 
-
-
-
-
+// protocol fee goes into multisig and address can be updated?
+// dip LP tokens for specified pairs redeemed for doubledip tokens?
+// doubledip tokens used to vote on new specified pairs, multisig, and spending?
+// if share is not calculated for recipient, that's fine, and calling calculateShare will add to their current share from previous postdip transfers
 
 
 
@@ -158,6 +177,7 @@ Double-dip tokens and double-dip functionality? Re-opening for a sale of additio
 
 
 /* Outdated Notes */
+// Double-dip tokens and double-dip functionality? Re-opening for a sale of additional dip tokens when approved by DD token holders. Project treasury fed by protocol fees collected when dip() is called. Dip tokens eligible for Double Dip token rewards determined by multisig or DD token holders. Double Dip only eligible to be triggered once a month. Double Dip locked for the first yeaer after launch to give time to set up a Double Dip DAO.
 
 // only users whose shares have been set can call transfer and approve
 // balanceOf, transfer, approve, etc. will need to work differently depending on whether the dip happened or not
