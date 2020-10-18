@@ -3,15 +3,19 @@ pragma solidity ^0.7.3;
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
+import "https://github.com/Uniswap/uniswap-v2-periphery/blob/master/contracts/interfaces/IUniswapV2Router02.sol";
 import "./FixedPoint.sol";
 
 contract Dip is ERC20 {
   using SafeMath for uint256;
+  IUniswapV2Router02 public UniswapV2Router02 = IUniswapV2Router02(0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D);
 
   private address _targetToken;
   private address _baseToken;
   private address _targetPair;
   private address _dipPair;
+  private address _protocolFeeWallet;
+  private address _protocolFee;
 
   private bool _predip = true;
   private uint256 _startTime;
@@ -19,19 +23,20 @@ contract Dip is ERC20 {
   private mapping (address => uint256) _shares;
   private mapping (address => mapping (address => uint256))  _shareAllowances;
 
-  constructor(address targetToken, address baseToken) ERC20('Dip V1', 'DIP-V1') {
+  constructor(address targetToken, address baseToken, address protocolFeeWallet) ERC20('Dip V1', 'DIP-V1') {
     _targetToken = target;
     _baseToken = baseToken;
-    address factory = 0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f;
+    _protocolFeeWallet = protocolFeeWallet;
+    address uniswapFactory = 0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f;
     _targetPair = address(uint(keccak256(abi.encodePacked(
       hex'ff',
-      factory,
+      uniswapFactory,
       keccak256(abi.encodePacked(targetToken, baseToken)),
       hex'96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f'
     ))));
     _dipPair = address(uint(keccak256(abi.encodePacked(
       hex'ff',
-      factory,
+      uniswapFactory,
       keccak256(abi.encodePacked(address(this), baseToken)),
       hex'96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f'
     ))));
@@ -129,17 +134,41 @@ contract Dip is ERC20 {
     _shareAllowances[_msgSender(), spender].sub(subtractedValue);
   }
 
-  function swap(uint256 amount) public {
+  function swap(uint256 amountIn, uint256 amountOut) public {
     require(_predip === true, "The token distribution period is over.");
-    IERC20(_targetToken).transferFrom(_msgSender(), address(this), amount);
-    // sell target token
-    // buy dip tokens and ETH and fund the Dip/ETH pool
+    IERC20(_targetToken).transferFrom(_msgSender(), address(this), amountIn);
+    IERC20(_targetToken).approve(address(UniswapV2Router02), amountIn);
+    address[] memory path = new address[](2);
+    path[0] = address(_targetToken);
+    path[1] = address(_baseToken);
+    uint[] memory amounts = UniswapV2Router02.swapExactTokensForTokens(
+      amountIn,
+      amountOut,
+      path,
+      this(address),
+      block.timestamp
+    );
+    uint256 _actualAmountOut = amounts[1];
+    uint256 _swapFee = _actualAmountOut.div(100).mul(5);
+    uint256 _amountLeft = _actualAmountOut.sub(_swapFee);
+    _protocolFee.add(_swapFee);
+    _mint(_msgSender(), amountIn);
+    // use 50% of _amountLeft to buy dip tokens
+
+    // fund the dip/basetoken pool
+
   }
 
   function dip() public {
     require(block.timestamp >= _startTime.add(2 days), "Token distribution lasts for two days before the dip.");
     _predip = false;
     _calculateShare(_dipPair);
+    IERC20(_baseToken).transfer(_protocolFeeWallet, _protocolFee);
+  }
+
+  function rebase() public {
+    // adjust total supply up or down based on target token price
+    // reward LP token
   }
 
   // set a user's share relative to their percentage of the initial total supply
@@ -160,12 +189,6 @@ contract Dip is ERC20 {
       amount
     );
   }
-
-  // change total supply, reward rebaser with Dip pool LP tokens
-  function rebase() public {
-    // adjust total supply
-    // reward LP token
-  }
 }
 
 
@@ -175,34 +198,4 @@ contract Dip is ERC20 {
 // doubledip tokens used to vote on new specified pairs, multisig, and spending?
 // if share is not calculated for recipient, that's fine, and calling calculateShare will add to their current share from previous postdip transfers
 // locking dip LP tokens to farm doubledip tokens incentivizes long-term liquidity for important pools
-
-
-
-
-
-
-
-
-/* Outdated Notes */
-// Double-dip tokens and double-dip functionality? Re-opening for a sale of additional dip tokens when approved by DD token holders. Project treasury fed by protocol fees collected when dip() is called. Dip tokens eligible for Double Dip token rewards determined by multisig or DD token holders. Double Dip only eligible to be triggered once a month. Double Dip locked for the first yeaer after launch to give time to set up a Double Dip DAO.
-
-// only users whose shares have been set can call transfer and approve
-// balanceOf, transfer, approve, etc. will need to work differently depending on whether the dip happened or not
-// we'll need a way to update the Dip contract with the address of the Dip/ETH pool after deployment
-
-
-// we will need to track balances before the dip, and shares after the dip, deleting the balance after calculating share
-
-  // total supply increases from minting, and then adjusts up and down through rebase
-
-  // user shares can be set after the dip function call
-
-  // user shares are initially set relative to the initial supply
-  // instead of tracking token balances per user, we track shares of the variable total supply
-  // for balance, calculate total supply times share
-
-  // look into using beforeTokenTransfer hook for transfer controls
-
-  // modifier checking if share was set
-
-    // need to override balanceOf function from base, even though it's not virtual
+// for token distro, amountOut should be calculated at the UI level
