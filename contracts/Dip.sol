@@ -98,7 +98,11 @@ contract Dip is ERC20 {
   function transferFrom(address sender, address recipient, uint256 amount) public override returns (bool) {
     if (_predip === true) {
       _transfer(sender, recipient, amount);
-      _approve(sender, _msgSender(), _allowances[sender][_msgSender()].sub(amount, "ERC20: transfer amount exceeds allowance"));
+      _approve(
+        sender,
+        _msgSender(),
+        _allowances[sender][_msgSender()].sub(amount, "ERC20: transfer amount exceeds allowance")
+      );
       return true;
     }
     if (_balances[sender] > 0) {
@@ -112,7 +116,11 @@ contract Dip is ERC20 {
 
   function increaseAllowance(address spender, uint256 addedValue) public override returns (bool) {
     if (_predip === true) {
-      _approve(_msgSender(), spender, _allowances[_msgSender()][spender].add(addedValue));
+      _approve(
+        _msgSender(),
+        spender,
+        _allowances[_msgSender()][spender].add(addedValue)
+      );
       return true;
     }
     if (_balances[_msgSender()] > 0) {
@@ -124,7 +132,11 @@ contract Dip is ERC20 {
 
   function decreaseAllowance(address spender, uint256 subtractedValue) public override returns (bool) {
     if (_predip === true) {
-      _approve(_msgSender(), spender, _allowances[_msgSender()][spender].sub(subtractedValue, "ERC20: decreased allowance below zero"));
+      _approve(
+        _msgSender(),
+        spender,
+        _allowances[_msgSender()][spender].sub(subtractedValue, "ERC20: decreased allowance below zero")
+      );
       return true;
     }
     if (_balances[_msgSender()] > 0) {
@@ -134,7 +146,7 @@ contract Dip is ERC20 {
     _shareAllowances[_msgSender(), spender].sub(subtractedValue);
   }
 
-  function swap(uint256 amountIn, uint256 amountOut) public {
+  function swap(uint256 amountIn, uint256 amountOut, uint256 dipAmountOut) public {
     require(_predip === true, "The token distribution period is over.");
     IERC20(_targetToken).transferFrom(_msgSender(), address(this), amountIn);
     IERC20(_targetToken).approve(address(UniswapV2Router02), amountIn);
@@ -150,11 +162,23 @@ contract Dip is ERC20 {
     );
     uint256 _actualAmountOut = amounts[1];
     uint256 _swapFee = _actualAmountOut.div(100).mul(5);
-    uint256 _amountLeft = _actualAmountOut.sub(_swapFee);
+    uint256 _baseAmountLeft = _actualAmountOut.sub(_swapFee);
     _protocolFee.add(_swapFee);
     _mint(_msgSender(), amountIn);
-    // use 50% of _amountLeft to buy dip tokens
-
+    IERC20(_targetToken).approve(
+      address(UniswapV2Router02),
+      _baseAmountLeft.div(2)
+    );
+    address[] memory path2 = new address[](2);
+    path2[0] = address(_baseToken);
+    path2[1] = this(address);
+    UniswapV2Router02.swapExactTokensForTokens(
+      _baseAmountLeft.div(2),
+      dipAmountOut,
+      path2,
+      this(address),
+      block.timestamp
+    );
     // fund the dip/basetoken pool
 
   }
@@ -168,6 +192,7 @@ contract Dip is ERC20 {
 
   function rebase() public {
     // adjust total supply up or down based on target token price
+    // uniswap specific things -- sync and skim functions
     // reward LP token
   }
 
@@ -199,3 +224,5 @@ contract Dip is ERC20 {
 // if share is not calculated for recipient, that's fine, and calling calculateShare will add to their current share from previous postdip transfers
 // locking dip LP tokens to farm doubledip tokens incentivizes long-term liquidity for important pools
 // for token distro, amountOut should be calculated at the UI level
+// amountOut could also be calculated via a Uniswap oracle
+// this might be simpler from a user experience perspective
